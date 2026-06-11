@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>뉴스 중립성 분석 대시보드</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Hybrid AI News Analyzer</p>
+          <h1>뉴스 중립성 분석 대시보드</h1>
+        </div>
+        <div class="api-controls" aria-label="API 서버 설정">
+          <label for="apiBaseInput">API</label>
+          <input id="apiBaseInput" type="url" value="http://localhost:8081" autocomplete="off">
+          <label for="aiBaseInput">AI</label>
+          <input id="aiBaseInput" type="url" value="http://localhost:8000" autocomplete="off">
+          <button id="saveApiBaseButton" type="button">적용</button>
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <section class="status-panel" aria-label="시스템 상태">
+          <div class="status-item">
+            <span class="status-label">API 서버</span>
+            <strong id="apiStatus">확인 전</strong>
+          </div>
+          <div class="status-item">
+            <span class="status-label">기사 수</span>
+            <strong id="articleCount">-</strong>
+          </div>
+          <div class="status-item">
+            <span class="status-label">선택 기사</span>
+            <strong id="selectedArticleLabel">없음</strong>
+          </div>
+          <div class="status-actions">
+            <button id="refreshButton" type="button">새로고침</button>
+            <button id="notFoundButton" type="button">404 확인</button>
+            <button id="methodCheckButton" type="button">405 확인</button>
+          </div>
+        </section>
+
+        <section class="content-grid">
+          <aside class="article-pane" aria-label="기사 목록">
+            <div class="pane-header">
+              <div>
+                <h2>기사 목록</h2>
+                <p id="pageSummary">page=0, size=5</p>
+              </div>
+              <select id="pageSizeSelect" aria-label="페이지 크기">
+                <option value="5">5개</option>
+                <option value="10">10개</option>
+                <option value="20">20개</option>
+              </select>
+            </div>
+            <div id="articleList" class="article-list" aria-live="polite"></div>
+            <div class="pager">
+              <button id="previousPageButton" type="button">이전</button>
+              <button id="nextPageButton" type="button">다음</button>
+            </div>
+          </aside>
+
+          <section class="detail-pane" aria-label="기사 상세">
+            <div id="detailEmpty" class="empty-state">
+              <h2>기사를 선택하세요</h2>
+              <p>왼쪽 목록에서 기사를 선택하면 AI 분석 결과가 표시됩니다.</p>
+            </div>
+
+            <article id="detailContent" class="detail-content hidden">
+              <div class="detail-header">
+                <div>
+                  <p id="detailSource" class="eyebrow">-</p>
+                  <h2 id="detailTitle">-</h2>
+                </div>
+                <a id="detailUrl" href="#" target="_blank" rel="noreferrer">원문 열기</a>
+              </div>
+              <dl class="meta-grid">
+                <div>
+                  <dt>기사 ID</dt>
+                  <dd id="detailId">-</dd>
+                </div>
+                <div>
+                  <dt>발행 시각</dt>
+                  <dd id="detailPublishedAt">-</dd>
+                </div>
+                <div>
+                  <dt>분석 모델</dt>
+                  <dd id="detailAnalysisCount">-</dd>
+                </div>
+              </dl>
+              <div class="section-heading">
+                <h3>AI 분석 결과</h3>
+                <button id="analysisOnlyButton" type="button">분석 API 재조회</button>
+              </div>
+              <div id="analysisGrid" class="analysis-grid"></div>
+              <div class="section-heading comment-heading">
+                <h3>댓글 여론</h3>
+                <button id="commentAnalysisButton" type="button">댓글 API 조회</button>
+              </div>
+              <div id="commentPanel" class="comment-panel">
+                <p class="summary">댓글 여론 분석 결과가 아직 조회되지 않았습니다.</p>
+              </div>
+            </article>
+          </section>
+        </section>
+
+        <section class="response-panel" aria-label="검증 응답">
+          <div class="pane-header">
+            <div>
+              <h2>검증 응답</h2>
+              <p>에러 응답과 보안 헤더 확인 결과</p>
+            </div>
+            <button id="clearLogButton" type="button">지우기</button>
+          </div>
+          <pre id="responseLog">아직 실행된 검증 요청이 없습니다.</pre>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./app.js?v=20260606-demo"></script>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Local model/training artifacts are too large for the runtime image.
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+lora_output/
+Ollama/
+
+# Development-only assets.
+*.ipynb
+.pytest_cache/
+data/*.jsonl

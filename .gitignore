@@ -1,0 +1,71 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets.json
+
+# Local-only bundled repositories / tools
+everything-claude-code/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+ai-engine/data/*.jsonl
+ai-engine/lora_output/
+ai-engine/outputs/
+
+# Large local model files
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+ai-engine/*.gguf
+
+# Reports / docs / generated submission artifacts
+reports/
+reports/**/*.py
+docs/
+tmp/
+generate_code_html.py
+*.docx
+*.pptx
+*.xlsx
+*.hwp
+*.hwp.pdf
+~$*
+
+# Generated screenshots / rendered evidence
+*.png
+*.jpg
+*.jpeg
+*.html
+!frontend/**/*.html
+*.pdf
+
+# Java / Gradle
+.gradle/
+build/
+api-server/.gradle/
+api-server/build/
+api-server/bin/
+api-server/logs/
+api-server/starter.zip
+!api-server/gradle/wrapper/gradle-wrapper.jar
+
+# IDE / OS / tooling artifacts
+.DS_Store
+.idea/
+.vscode/
+.claude/
+.playwright-mcp/
+
+# Logs
+*.log
+logs/

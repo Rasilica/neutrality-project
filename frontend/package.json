@@ -1,0 +1,10 @@
+{
+  "name": "jinro-news-neutrality-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 5173 --directory .",
+    "test": "node --test app.test.mjs"
+  }
+}

@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: api-server
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/news_db}
+    username: ${SPRING_DATASOURCE_USERNAME:devuser}
+    password: ${SPRING_DATASOURCE_PASSWORD:devpassword}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: public
+
+server:
+  port: 8080
+
+app:
+  security:
+    allowed-origins:
+      - http://localhost:3000
+      - http://localhost:5173
+      - http://localhost:8081
+    allowed-methods:
+      - GET
+      - OPTIONS
+    cors-max-age-seconds: 3600
+    content-security-policy: "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
+    hsts-enabled: true
+    hsts-max-age-seconds: 31536000
+  rate-limit:
+    enabled: true
+    limit: 60
+    window-seconds: 60
+    cleanup-threshold: 1000

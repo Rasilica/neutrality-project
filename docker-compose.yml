@@ -1,0 +1,69 @@
+services:
+  # 1. PostgreSQL 데이터베이스 서버
+  db:
+    image: postgres:15-alpine
+    container_name: dev_postgres
+    environment:
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: news_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d  # 최초 실행 시 스키마 자동 초기화
+    restart: unless-stopped
+
+  # 2. AI 분석 엔진 (Python FastAPI)
+  ai-engine:
+    build:
+      context: ./ai-engine
+    container_name: dev_ai_engine
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://devuser:devpassword@db:5432/news_db
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - AI_ENGINE_ADMIN_TOKEN=${AI_ENGINE_ADMIN_TOKEN:-}
+      - AI_ENGINE_ADMIN_CIDRS=127.0.0.1/32,172.16.0.0/12,10.0.0.0/8
+    depends_on:
+      - db
+    volumes:
+      - ./ai-engine:/app
+    restart: always
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  ai-worker:
+    build:
+      context: ./ai-engine
+    container_name: dev_ai_worker
+    environment:
+      - DATABASE_URL=postgresql://devuser:devpassword@db:5432/news_db
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    depends_on:
+      - db
+    volumes:
+      - ./ai-engine:/app
+    restart: always
+    command: python worker.py
+
+  # 3. 비즈니스 API 서버 (Java Spring Boot)
+  # 초기에는 build 전이므로 주석 처리하거나 빈 컨테이너로 둡니다.
+  api-server:
+    build:
+      context: ./api-server
+    container_name: dev_api_server
+    ports:
+      - "8081:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/news_db
+      - SPRING_DATASOURCE_USERNAME=devuser
+      - SPRING_DATASOURCE_PASSWORD=devpassword
+    depends_on:
+      - db
+    restart: always
+
+volumes:
+  postgres_data:
