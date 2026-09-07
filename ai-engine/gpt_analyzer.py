@@ -1,14 +1,16 @@
-import os
-import json
 import logging
-from sqlalchemy.orm import Session
-from openai import OpenAI
+import os
 
-from models import Article, AnalysisResult, Comment
+from openai import OpenAI
+from sqlalchemy.orm import Session
+
+from analysis_schemas import ArticleAnalysisPayload
+from models import AnalysisResult, Article, Comment
 
 logger = logging.getLogger(__name__)
 
 SBS_NEWS_URL_PATTERN = "%news.sbs.co.kr%"
+
 
 class GPTAnalyzer:
     def __init__(self, db: Session):
@@ -27,9 +29,10 @@ class GPTAnalyzer:
             .join(Comment, Article.id == Comment.article_id)
             .outerjoin(
                 AnalysisResult,
-                (Article.id == AnalysisResult.article_id) & (AnalysisResult.model_used == self.model_name),
+                (Article.id == AnalysisResult.article_id)
+                & (AnalysisResult.model_used == self.model_name),
             )
-            .filter(Article.url.like(SBS_NEWS_URL_PATTERN), AnalysisResult.id == None)
+            .filter(Article.url.like(SBS_NEWS_URL_PATTERN), AnalysisResult.id.is_(None))
             .distinct()
             .limit(10)
         )
@@ -45,7 +48,11 @@ class GPTAnalyzer:
         un_analyzed = self._query_eligible_articles().all()
 
         if not un_analyzed:
-            return {"status": "success", "message": "No new articles to analyze with GPT.", "analyzed_count": 0}
+            return {
+                "status": "success",
+                "message": "No new articles to analyze with GPT.",
+                "analyzed_count": 0,
+            }
 
         analyzed_count = 0
         errors = 0
@@ -73,33 +80,41 @@ class GPTAnalyzer:
 }}
 """
             try:
-                response = self.client.chat.completions.create(
+                response = self.client.responses.parse(
                     model=self.model_name,
-                    messages=[
-                        {"role": "system", "content": "You are a helpful and strict JSON answering assistant."},
-                        {"role": "user", "content": prompt}
+                    input=[
+                        {
+                            "role": "system",
+                            "content": "You are a helpful and strict JSON answering assistant.",
+                        },
+                        {"role": "user", "content": prompt},
                     ],
-                    response_format={"type": "json_object"}
+                    text_format=ArticleAnalysisPayload,
                 )
-                
-                response_text = response.choices[0].message.content.strip()
-                result_data = json.loads(response_text)
+                payload = response.output_parsed
+                if payload is None:
+                    raise ValueError("OpenAI returned no structured analysis payload.")
+                result_data = payload.model_dump(mode="json")
 
                 analysis_result = AnalysisResult(
                     article_id=article.id,
                     model_used=self.model_name,
-                    sentiment_score=float(result_data.get("sentiment_score", 0.0)),
-                    bias_score=float(result_data.get("bias_score", 0.0)),
-                    factuality_score=float(result_data.get("factuality_score", 0.0)),
-                    summary=str(result_data.get("summary", "")),
-                    raw_response=result_data
+                    sentiment_score=payload.sentiment_score,
+                    bias_score=payload.bias_score,
+                    factuality_score=payload.factuality_score,
+                    summary=payload.summary,
+                    raw_response=result_data,
                 )
                 self.db.add(analysis_result)
                 analyzed_count += 1
             except Exception:
-                logger.error("Error analyzing article with GPT. article_id=%s", article.id, exc_info=True)
+                logger.error(
+                    "Error analyzing article with GPT. article_id=%s",
+                    article.id,
+                    exc_info=True,
+                )
                 errors += 1
-                
+
         try:
             self.db.commit()
         except Exception:
@@ -109,11 +124,7 @@ class GPTAnalyzer:
                 "status": "error",
                 "message": "Failed to commit GPT analysis results.",
                 "analyzed_count": analyzed_count,
-                "errors": errors + 1
+                "errors": errors + 1,
             }
-        
-        return {
-            "status": "success",
-            "analyzed_count": analyzed_count,
-            "errors": errors
-        }
+
+        return {"status": "success", "analyzed_count": analyzed_count, "errors": errors}

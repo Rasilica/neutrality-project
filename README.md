@@ -31,7 +31,7 @@
 
 ## 하이브리드 AI 구성
 
-- **클라우드 LLM**: Gemini(`analyzer.py`, `comment_analyzer.py`)와 GPT(`gpt_analyzer.py`)로 기사 중립성·댓글 감성을 분석합니다.
+- **클라우드 LLM**: 지원되는 `google-genai` SDK와 OpenAI Responses API의 구조화 출력을 사용합니다. 모든 점수·비율·요약은 Pydantic 스키마로 검증한 뒤에만 저장합니다.
 - **로컬 LLM**: Unsloth 기반 LoRA 파인튜닝 파이프라인(`train_lora.py`, Colab 노트북)으로 자체 모델을 학습하고,
   GGUF로 변환해 Ollama(`ai-engine/Ollama/Modelfile`)로 서빙합니다.
 - **모델 비교**: `compare_ollama_models.py`로 로컬 모델들의 품질·속도를 벤치마크해 채택 모델을 선정했습니다.
@@ -45,7 +45,8 @@
 
 ```bash
 cp .env.example .env
-# .env에 GEMINI_API_KEY, OPENAI_API_KEY, AI_ENGINE_ADMIN_TOKEN 입력
+# DB 비밀번호와 AI_ENGINE_ADMIN_TOKEN을 안전한 임의 값으로 교체
+# 사용할 공급자의 GEMINI_API_KEY 또는 OPENAI_API_KEY 입력
 ```
 
 ### 2. 전체 스택 실행
@@ -54,7 +55,17 @@ cp .env.example .env
 docker compose up -d db ai-engine ai-worker api-server
 
 # RSS 소스 등록 (최초 1회)
-docker compose exec -T db psql -U devuser -d news_db < db/live_rss_sources.sql
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  < db/live_rss_sources.sql
+```
+
+기존 PostgreSQL 볼륨을 계속 사용하는 경우, 애플리케이션 업데이트 전에 ID 타입과 데이터 검증 제약을 순서대로 적용합니다. 범위를 벗어난 기존 분석값이나 `(article_id, model_used)` 중복이 있으면 데이터 삭제 없이 두 번째 마이그레이션이 중단됩니다.
+
+```bash
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  < db/migrate_serial_ids_to_bigint.sql
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  < db/harden_analysis_constraints.sql
 ```
 
 ### 3. 대시보드 실행
@@ -73,8 +84,16 @@ npm --prefix frontend run serve
 ## 테스트
 
 ```bash
-# Python (ai-engine)
-cd ai-engine && pytest
+# Python 3.12 (ai-engine)
+cd ai-engine
+uv venv --python 3.12 .venv
+uv pip sync --python .venv/bin/python --require-hashes requirements-dev.txt
+.venv/bin/pytest
+
+# 이번 분석 경로의 80% 커버리지 게이트
+.venv/bin/pytest test_analysis_schemas.py test_analyzer_responses.py \
+  --cov=analysis_schemas --cov=analyzer --cov=gpt_analyzer --cov=comment_analyzer \
+  --cov-fail-under=80
 
 # Java (api-server) — 통합/보안/부하 테스트 포함
 cd api-server && ./gradlew test
@@ -83,11 +102,21 @@ cd api-server && ./gradlew test
 npm --prefix frontend test
 ```
 
+Python 직접 의존성을 바꿀 때는 `requirements.in`/`requirements-dev.in`을 수정하고 CI와 같은 Python 버전으로 해시 잠금을 다시 생성합니다.
+
+```bash
+cd ai-engine
+uv pip compile --python-version 3.12 --universal --generate-hashes requirements.in -o requirements.txt
+uv pip compile --python-version 3.12 --universal --generate-hashes requirements-dev.in -o requirements-dev.txt
+```
+
 ## 보안 설계
 
 - API 키·토큰은 모두 환경 변수로 주입하며 코드에 하드코딩하지 않습니다.
+- PostgreSQL 포트와 애플리케이션 포트는 기본적으로 루프백에만 바인딩되며, Compose 서비스 이름은 프로젝트별로 격리됩니다.
 - AI 엔진의 관리용 엔드포인트는 **허용 IP 대역(CIDR) + 관리자 토큰** 이중 검증을 거칩니다.
 - Spring Boot API는 보안 헤더, 레이트 리밋, HTTP 메서드 보호 필터를 적용했습니다.
+- 대시보드의 외부 기사 링크는 HTTP/HTTPS 프로토콜만 허용합니다.
 
 ## 디렉토리 구조
 

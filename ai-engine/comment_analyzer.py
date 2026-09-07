@@ -1,17 +1,22 @@
-import os
-import json
 import logging
+import os
+from typing import TypeVar
+
+from google import genai
+from google.genai import types
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-import google.generativeai as genai
 
-from models import Article, AnalysisResult, Comment, CommentAnalysis
+from analysis_schemas import CommentAnalysisPayload
+from models import AnalysisResult, Article, Comment, CommentAnalysis
 
 logger = logging.getLogger(__name__)
 
 # 댓글 감정 분석 시 AI에 한 번에 넘길 최대 댓글 수 (프롬프트 길이 제한 고려)
 MAX_COMMENTS_PER_REQUEST = 80
 SBS_NEWS_URL_PATTERN = "%news.sbs.co.kr%"
+PayloadT = TypeVar("PayloadT", bound=BaseModel)
 
 
 class CommentAnalyzer:
@@ -20,13 +25,15 @@ class CommentAnalyzer:
     개별 감정 비율과 여론 종합 요약을 comment_analysis 테이블에 저장하는 분석기.
     """
 
+    model_name = "gemini-2.5-flash"
+
     def __init__(self, db: Session):
         self.db = db
         self.api_key = os.getenv("GEMINI_API_KEY")
         if self.api_key:
-            genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel("gemini-2.5-flash")
+            self.client = genai.Client(api_key=self.api_key)
         else:
+            self.client = None
             logger.warning("GEMINI_API_KEY is not set.")
 
     def _query_eligible_articles(self):
@@ -35,22 +42,32 @@ class CommentAnalyzer:
             self.db.query(Article)
             .join(Comment, Article.id == Comment.article_id)
             .join(AnalysisResult, Article.id == AnalysisResult.article_id)
-            .filter(Article.url.like(SBS_NEWS_URL_PATTERN), Article.id.not_in(analyzed_ids))
+            .filter(
+                Article.url.like(SBS_NEWS_URL_PATTERN), Article.id.not_in(analyzed_ids)
+            )
             .distinct()
             .limit(5)
         )
 
-    def _generate_and_parse_json(self, prompt: str) -> dict:
+    def _generate_and_validate(self, prompt: str, schema: type[PayloadT]) -> PayloadT:
         last_error = None
         for attempt in range(2):
-            response = self.model.generate_content(prompt)
-            response_text = response.text.replace("```json", "").replace("```", "").strip()
             try:
-                return json.loads(response_text)
-            except json.JSONDecodeError as exc:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_json_schema=schema.model_json_schema(),
+                    ),
+                )
+                return schema.model_validate_json(response.text)
+            except ValidationError as exc:
                 last_error = exc
                 if attempt == 0:
-                    logger.warning("Gemini returned invalid JSON. Retrying once.")
+                    logger.warning(
+                        "Gemini returned an invalid structured response. Retrying once."
+                    )
         raise last_error
 
     def run(self) -> dict:
@@ -58,14 +75,18 @@ class CommentAnalyzer:
         댓글이 존재하지만 아직 여론 분석이 수행되지 않은 기사를 최대 5건 처리합니다.
         기사별 전체 댓글을 Gemini에 넘겨 감정 비율과 여론 요약을 도출합니다.
         """
-        if not self.api_key:
+        if not self.client:
             return {"status": "error", "message": "GEMINI_API_KEY is missing."}
 
         # SBS 기사 중 댓글과 기사 분석이 있고 아직 댓글 여론 분석이 없는 기사만 처리
         articles = self._query_eligible_articles().all()
 
         if not articles:
-            return {"status": "success", "message": "No new comments to analyze.", "analyzed_count": 0}
+            return {
+                "status": "success",
+                "message": "No new comments to analyze.",
+                "analyzed_count": 0,
+            }
 
         analyzed_count = 0
         errors = 0
@@ -79,7 +100,11 @@ class CommentAnalyzer:
                     .limit(MAX_COMMENTS_PER_REQUEST)
                     .all()
                 )
-                total_in_db = self.db.query(Comment).filter(Comment.article_id == article.id).count()
+                total_in_db = (
+                    self.db.query(Comment)
+                    .filter(Comment.article_id == article.id)
+                    .count()
+                )
 
                 comment_block = "\n".join([f"- {c.content}" for c in comments])
 
@@ -107,23 +132,28 @@ class CommentAnalyzer:
   "public_opinion": "여론 요약"
 }}"""
 
-                result_data = self._generate_and_parse_json(prompt)
+                payload = self._generate_and_validate(prompt, CommentAnalysisPayload)
+                result_data = payload.model_dump(mode="json")
 
                 analysis = CommentAnalysis(
                     article_id=article.id,
                     total_comments=total_in_db,
-                    avg_sentiment=float(result_data.get("avg_sentiment", 0.0)),
-                    positive_ratio=float(result_data.get("positive_ratio", 0.0)),
-                    negative_ratio=float(result_data.get("negative_ratio", 0.0)),
-                    neutral_ratio=float(result_data.get("neutral_ratio", 0.0)),
-                    public_opinion=str(result_data.get("public_opinion", "")),
+                    avg_sentiment=payload.avg_sentiment,
+                    positive_ratio=payload.positive_ratio,
+                    negative_ratio=payload.negative_ratio,
+                    neutral_ratio=payload.neutral_ratio,
+                    public_opinion=payload.public_opinion,
                     raw_response=result_data,
                 )
                 self.db.add(analysis)
                 analyzed_count += 1
 
             except Exception:
-                logger.error("기사 댓글 여론 분석 중 오류. article_id=%s", article.id, exc_info=True)
+                logger.error(
+                    "기사 댓글 여론 분석 중 오류. article_id=%s",
+                    article.id,
+                    exc_info=True,
+                )
                 errors += 1
 
         try:

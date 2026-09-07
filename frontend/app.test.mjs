@@ -14,6 +14,7 @@ const {
   formatScoreAsPoints,
   normalizeAiBase,
   normalizeApiBase,
+  normalizeExternalUrl,
   scoreTone,
   scoreToPercent,
   summarizePage,
@@ -27,6 +28,14 @@ test("normalizeApiBase trims trailing slashes and falls back to localhost API", 
 test("normalizeAiBase trims trailing slashes and falls back to localhost AI engine", () => {
   assert.equal(normalizeAiBase(" http://localhost:8000/// "), "http://localhost:8000");
   assert.equal(normalizeAiBase(""), "http://localhost:8000");
+});
+
+test("normalizeExternalUrl permits only HTTP and HTTPS links", () => {
+  assert.equal(normalizeExternalUrl("https://news.sbs.co.kr/article/1"), "https://news.sbs.co.kr/article/1");
+  assert.equal(normalizeExternalUrl("http://example.com/news"), "http://example.com/news");
+  assert.equal(normalizeExternalUrl("javascript:alert(1)"), "#");
+  assert.equal(normalizeExternalUrl("data:text/html,unsafe"), "#");
+  assert.equal(normalizeExternalUrl("not a url"), "#");
 });
 
 test("scoreToPercent maps sentiment from -1..1 and clamps out of range values", () => {

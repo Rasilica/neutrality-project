@@ -51,7 +51,11 @@ CREATE TABLE IF NOT EXISTS analysis_results (
     factuality_score   FLOAT,                  -- 사실 기반 점수 (0.0 ~ 1.0)
     summary            TEXT,                   -- AI가 생성한 기사 요약
     raw_response       JSONB,                  -- AI 원본 응답 (전체 JSON 보존)
-    analyzed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    analyzed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_analysis_article_model UNIQUE (article_id, model_used),
+    CONSTRAINT ck_analysis_sentiment CHECK (sentiment_score BETWEEN -1.0 AND 1.0),
+    CONSTRAINT ck_analysis_bias CHECK (bias_score BETWEEN 0.0 AND 1.0),
+    CONSTRAINT ck_analysis_factuality CHECK (factuality_score BETWEEN 0.0 AND 1.0)
 );
 
 CREATE INDEX IF NOT EXISTS idx_analysis_results_article_id ON analysis_results(article_id);
@@ -92,7 +96,14 @@ CREATE TABLE IF NOT EXISTS comment_analysis (
     neutral_ratio   FLOAT,                        -- 중립 댓글 비율 (0.0 ~ 1.0)
     public_opinion  TEXT,                         -- AI가 종합한 여론 요약
     raw_response    JSONB,                        -- AI 원본 응답
-    analyzed_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    analyzed_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT ck_comment_avg_sentiment CHECK (avg_sentiment BETWEEN -1.0 AND 1.0),
+    CONSTRAINT ck_comment_positive_ratio CHECK (positive_ratio BETWEEN 0.0 AND 1.0),
+    CONSTRAINT ck_comment_negative_ratio CHECK (negative_ratio BETWEEN 0.0 AND 1.0),
+    CONSTRAINT ck_comment_neutral_ratio CHECK (neutral_ratio BETWEEN 0.0 AND 1.0),
+    CONSTRAINT ck_comment_ratio_sum CHECK (
+        ABS(positive_ratio + negative_ratio + neutral_ratio - 1.0) <= 0.02
+    )
 );
 
 CREATE INDEX IF NOT EXISTS idx_comment_analysis_article_id ON comment_analysis(article_id);

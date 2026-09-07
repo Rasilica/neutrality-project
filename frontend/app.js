@@ -55,6 +55,15 @@ export function normalizeAiBase(value) {
   return trimmed || DEFAULT_AI_BASE;
 }
 
+export function normalizeExternalUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : "#";
+  } catch {
+    return "#";
+  }
+}
+
 export function formatDateTime(value) {
   if (!value) {
     return "-";
@@ -229,7 +238,7 @@ function renderArticleDetail(article) {
   elements.detailContent.classList.remove("hidden");
   elements.detailSource.textContent = article.sourceName || "출처 없음";
   elements.detailTitle.textContent = article.title || "제목 없음";
-  elements.detailUrl.href = article.url || "#";
+  elements.detailUrl.href = normalizeExternalUrl(article.url);
   elements.detailId.textContent = String(article.id);
   elements.detailPublishedAt.textContent = formatDateTime(article.publishedAt);
   renderAnalysis(article.analysisResults || []);

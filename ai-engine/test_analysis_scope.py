@@ -43,7 +43,10 @@ class FakeDb:
 
 
 def filter_contains_like_value(filters, expected):
-    return any(getattr(getattr(expression, "right", None), "value", None) == expected for expression in filters)
+    return any(
+        getattr(getattr(expression, "right", None), "value", None) == expected
+        for expression in filters
+    )
 
 
 def first_join_targets(query):
@@ -60,6 +63,8 @@ def test_gemini_article_analysis_scope_requires_sbs_article_with_comments():
     assert Comment in first_join_targets(query)
     assert filter_contains_like_value(query.filters, "%news.sbs.co.kr%")
     assert query.outerjoins[0][0] is AnalysisResult
+    assert len(query.outerjoins[0]) == 2
+    assert "model_used" in str(query.outerjoins[0][1])
     assert query.distinct_called is True
     assert query.limit_value == 10
 
@@ -75,6 +80,8 @@ def test_gpt_article_analysis_scope_requires_sbs_article_with_comments():
     assert Comment in first_join_targets(query)
     assert filter_contains_like_value(query.filters, "%news.sbs.co.kr%")
     assert query.outerjoins[0][0] is AnalysisResult
+    assert len(query.outerjoins[0]) == 2
+    assert "model_used" in str(query.outerjoins[0][1])
     assert query.distinct_called is True
     assert query.limit_value == 10
 

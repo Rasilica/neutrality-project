@@ -3,9 +3,9 @@ spring:
     name: api-server
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/news_db}
-    username: ${SPRING_DATASOURCE_USERNAME:devuser}
-    password: ${SPRING_DATASOURCE_PASSWORD:devpassword}
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
   jpa:
