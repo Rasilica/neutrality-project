@@ -19,46 +19,104 @@ class FakeOperation:
         return {"db": self.db, "built": True}
 
 
+def test_operation_routes_submit_jobs(monkeypatch):
+    submitted = []
+
+    def fake_submit(operation, task):
+        submitted.append((operation, task))
+        return "job-123"
+
+    monkeypatch.setattr(main, "submit_operation", fake_submit)
+
+    response = asyncio.run(main.crawl_rss_feeds())
+
+    assert response == {
+        "status": "accepted",
+        "data": {"job_id": "job-123", "operation": "rss-crawl"},
+    }
+    assert submitted[0][0] == "rss-crawl"
+
+
+def test_collect_comments_submits_article_id(monkeypatch):
+    submitted = []
+
+    def fake_submit(operation, task):
+        submitted.append((operation, task))
+        return "job-456"
+
+    monkeypatch.setattr(main, "submit_operation", fake_submit)
+
+    response = asyncio.run(main.collect_comments(article_id=17))
+
+    assert response["data"] == {"job_id": "job-456", "operation": "comment-crawl"}
+    assert submitted[0][0] == "comment-crawl"
+
+
+def test_job_status_route_requires_existing_job(monkeypatch):
+    monkeypatch.setattr(main.job_manager, "get", lambda _job_id: {"status": "running"})
+    assert asyncio.run(main.get_job_status("job-123")) == {
+        "status": "success",
+        "data": {"status": "running"},
+    }
+
+    monkeypatch.setattr(main.job_manager, "get", lambda _job_id: None)
+    with pytest.raises(HTTPException) as missing:
+        asyncio.run(main.get_job_status("missing"))
+    assert missing.value.status_code == 404
+
+
+def test_long_running_routes_document_202_accepted():
+    for path in (
+        "/api/crawl",
+        "/api/cluster",
+        "/api/analyze",
+        "/api/analyze_gpt",
+        "/api/dataset/build",
+        "/api/comments/collect",
+        "/api/comments/analyze",
+    ):
+        responses = main.app.openapi()["paths"][path]["post"]["responses"]
+        assert "202" in responses
+
+
 @pytest.mark.parametrize(
-    ("symbol", "route", "expected"),
+    ("route", "operation"),
     [
-        ("RSSCrawler", main.crawl_rss_feeds, {"db": "db"}),
-        ("ArticleClusterer", main.cluster_articles, {"db": "db"}),
-        ("GeminiAnalyzer", main.analyze_articles, {"db": "db"}),
-        ("GPTAnalyzer", main.analyze_articles_gpt, {"db": "db"}),
-        ("DatasetBuilder", main.build_dataset, {"db": "db", "built": True}),
-        ("CommentAnalyzer", main.analyze_comments, {"db": "db"}),
+        (main.crawl_rss_feeds, "rss-crawl"),
+        (main.cluster_articles, "article-cluster"),
+        (main.analyze_articles, "gemini-analysis"),
+        (main.analyze_articles_gpt, "gpt-analysis"),
+        (main.build_dataset, "dataset-build"),
+        (main.analyze_comments, "comment-analysis"),
     ],
 )
-def test_operation_routes_return_service_results(monkeypatch, symbol, route, expected):
-    monkeypatch.setattr(main, symbol, FakeOperation)
+def test_operation_routes_return_accepted_job(monkeypatch, route, operation):
+    monkeypatch.setattr(main, "submit_operation", lambda name, task: f"job-{name}")
 
-    response = asyncio.run(route("db"))
+    response = asyncio.run(route())
 
-    assert response == {"status": "success", "data": expected}
-
-
-def test_collect_comments_passes_optional_article_id(monkeypatch):
-    monkeypatch.setattr(main, "CommentCrawler", FakeOperation)
-
-    response = asyncio.run(main.collect_comments(article_id=17, db="db"))
-
-    assert response["data"] == {"db": "db", "article_id": 17}
+    assert response == {
+        "status": "accepted",
+        "data": {"job_id": f"job-{operation}", "operation": operation},
+    }
 
 
-def test_operation_route_returns_generic_http_error(monkeypatch):
-    class FailedOperation(FakeOperation):
-        def run(self, **_kwargs):
-            raise RuntimeError("sensitive internal failure")
+def test_service_task_uses_fresh_session_and_closes_it(monkeypatch):
+    class FakeSession:
+        def __init__(self):
+            self.closed = False
 
-    monkeypatch.setattr(main, "RSSCrawler", FailedOperation)
+        def close(self):
+            self.closed = True
 
-    with pytest.raises(HTTPException) as error:
-        asyncio.run(main.crawl_rss_feeds("db"))
+    session = FakeSession()
+    monkeypatch.setattr(main, "SessionLocal", lambda: session)
+    monkeypatch.setattr(main, "RSSCrawler", FakeOperation)
 
-    assert error.value.status_code == 500
-    assert error.value.detail == "RSS 수집 처리 중 오류가 발생했습니다."
-    assert "sensitive" not in error.value.detail
+    result = main._execute_service(main.RSSCrawler)
+
+    assert result == {"db": session}
+    assert session.closed is True
 
 
 def test_health_and_root_routes():

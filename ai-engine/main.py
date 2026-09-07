@@ -11,14 +11,16 @@ from clustering import ArticleClusterer
 from comment_analyzer import CommentAnalyzer
 from comment_crawler import CommentCrawler
 from crawler import RSSCrawler
-from database import get_db
+from database import SessionLocal, get_db
 from dataset_builder import DatasetBuilder
 from gpt_analyzer import GPTAnalyzer
+from job_manager import JobManager
 from logging_config import configure_logging
 from models import Comment, CommentAnalysis
 
 configure_logging()
 logger = logging.getLogger(__name__)
+job_manager = JobManager()
 
 app = FastAPI(
     title="AI Analytics Engine (진로탐색)",
@@ -72,11 +74,21 @@ def verify_admin_access(
         raise HTTPException(status_code=401, detail="Invalid admin token.")
 
 
-def raise_logged_internal_error(operation: str, exception: Exception):
-    logger.error("%s failed.", operation, exc_info=True)
-    raise HTTPException(
-        status_code=500, detail=f"{operation} 처리 중 오류가 발생했습니다."
-    ) from exception
+def _execute_service(service_class, method_name="run", **kwargs):
+    db = SessionLocal()
+    try:
+        service = service_class(db)
+        return getattr(service, method_name)(**kwargs)
+    finally:
+        db.close()
+
+
+def submit_operation(operation: str, task) -> str:
+    return job_manager.submit(operation, task)
+
+
+def _accepted(operation: str, job_id: str):
+    return {"status": "accepted", "data": {"job_id": job_id, "operation": operation}}
 
 
 @app.get("/ping")
@@ -89,81 +101,85 @@ async def root():
     return {"message": "Welcome to Hybrid AI News Analyzer (AI Engine)"}
 
 
-@app.post("/api/crawl", dependencies=[Depends(verify_admin_access)])
-async def crawl_rss_feeds(db: Session = Depends(get_db)):
+@app.post("/api/crawl", status_code=202, dependencies=[Depends(verify_admin_access)])
+async def crawl_rss_feeds():
     """등록된 언론사의 RSS 피드를 수집하고 DB에 중복 없이 저장합니다."""
-    try:
-        crawler = RSSCrawler(db)
-        results = crawler.run()
-        return {"status": "success", "data": results}
-    except Exception as exc:
-        raise_logged_internal_error("RSS 수집", exc)
+    job_id = submit_operation("rss-crawl", lambda: _execute_service(RSSCrawler))
+    return _accepted("rss-crawl", job_id)
 
 
-@app.post("/api/cluster", dependencies=[Depends(verify_admin_access)])
-async def cluster_articles(db: Session = Depends(get_db)):
+@app.post("/api/cluster", status_code=202, dependencies=[Depends(verify_admin_access)])
+async def cluster_articles():
     """수집된 기사들을 TF-IDF 벡터화 후 DBSCAN으로 클러스터링(그룹핑)합니다."""
-    try:
-        clusterer = ArticleClusterer(db)
-        results = clusterer.run()
-        return {"status": "success", "data": results}
-    except Exception as exc:
-        raise_logged_internal_error("기사 클러스터링", exc)
+    job_id = submit_operation(
+        "article-cluster", lambda: _execute_service(ArticleClusterer)
+    )
+    return _accepted("article-cluster", job_id)
 
 
-@app.post("/api/analyze", dependencies=[Depends(verify_admin_access)])
-async def analyze_articles(db: Session = Depends(get_db)):
+@app.post("/api/analyze", status_code=202, dependencies=[Depends(verify_admin_access)])
+async def analyze_articles():
     """Gemini API를 호출하여 기사별 중립성을 평가하고 DB에 저장합니다."""
-    try:
-        analyzer = GeminiAnalyzer(db)
-        results = analyzer.run()
-        return {"status": "success", "data": results}
-    except Exception as exc:
-        raise_logged_internal_error("Gemini 기사 분석", exc)
+    job_id = submit_operation(
+        "gemini-analysis", lambda: _execute_service(GeminiAnalyzer)
+    )
+    return _accepted("gemini-analysis", job_id)
 
 
-@app.post("/api/analyze_gpt", dependencies=[Depends(verify_admin_access)])
-async def analyze_articles_gpt(db: Session = Depends(get_db)):
+@app.post(
+    "/api/analyze_gpt", status_code=202, dependencies=[Depends(verify_admin_access)]
+)
+async def analyze_articles_gpt():
     """OpenAI(GPT) API를 호출하여 기사별 중립성을 평가하고 DB에 저장합니다."""
-    try:
-        analyzer = GPTAnalyzer(db)
-        results = analyzer.run()
-        return {"status": "success", "data": results}
-    except Exception as exc:
-        raise_logged_internal_error("GPT 기사 분석", exc)
+    job_id = submit_operation("gpt-analysis", lambda: _execute_service(GPTAnalyzer))
+    return _accepted("gpt-analysis", job_id)
 
 
-@app.post("/api/dataset/build", dependencies=[Depends(verify_admin_access)])
-async def build_dataset(db: Session = Depends(get_db)):
+@app.post(
+    "/api/dataset/build", status_code=202, dependencies=[Depends(verify_admin_access)]
+)
+async def build_dataset():
     """LLM 파인튜닝을 위한 ChatML 포맷의 JSONL 학습 데이터셋을 생성합니다."""
-    try:
-        builder = DatasetBuilder(db)
-        results = builder.build_chatml_dataset()
-        return {"status": "success", "data": results}
-    except Exception as exc:
-        raise_logged_internal_error("데이터셋 생성", exc)
+    job_id = submit_operation(
+        "dataset-build",
+        lambda: _execute_service(DatasetBuilder, "build_chatml_dataset"),
+    )
+    return _accepted("dataset-build", job_id)
 
 
-@app.post("/api/comments/collect", dependencies=[Depends(verify_admin_access)])
-async def collect_comments(article_id: int = None, db: Session = Depends(get_db)):
+@app.post(
+    "/api/comments/collect",
+    status_code=202,
+    dependencies=[Depends(verify_admin_access)],
+)
+async def collect_comments(article_id: int = None):
     """지원 출처의 뉴스 댓글을 수집하여 DB에 저장합니다. article_id 미지정 시 전체 처리."""
-    try:
-        crawler = CommentCrawler(db)
-        results = crawler.run(article_id=article_id)
-        return {"status": "success", "data": results}
-    except Exception as exc:
-        raise_logged_internal_error("댓글 수집", exc)
+    job_id = submit_operation(
+        "comment-crawl",
+        lambda: _execute_service(CommentCrawler, article_id=article_id),
+    )
+    return _accepted("comment-crawl", job_id)
 
 
-@app.post("/api/comments/analyze", dependencies=[Depends(verify_admin_access)])
-async def analyze_comments(db: Session = Depends(get_db)):
+@app.post(
+    "/api/comments/analyze",
+    status_code=202,
+    dependencies=[Depends(verify_admin_access)],
+)
+async def analyze_comments():
     """수집된 댓글을 Gemini로 분석하여 기사별 여론 요약 및 감정 비율을 DB에 저장합니다."""
-    try:
-        analyzer = CommentAnalyzer(db)
-        results = analyzer.run()
-        return {"status": "success", "data": results}
-    except Exception as exc:
-        raise_logged_internal_error("댓글 여론 분석", exc)
+    job_id = submit_operation(
+        "comment-analysis", lambda: _execute_service(CommentAnalyzer)
+    )
+    return _accepted("comment-analysis", job_id)
+
+
+@app.get("/api/jobs/{job_id}", dependencies=[Depends(verify_admin_access)])
+async def get_job_status(job_id: str):
+    job = job_manager.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+    return {"status": "success", "data": job}
 
 
 @app.get("/api/comments/analysis/{article_id}")

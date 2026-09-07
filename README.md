@@ -100,6 +100,10 @@ cd api-server && ./gradlew test
 npm --prefix frontend test
 ```
 
+크롤링·클러스터링·LLM 분석처럼 오래 걸리는 관리 작업은 `202 Accepted`와 `job_id`를 즉시 반환합니다. `GET http://localhost:8000/api/jobs/{job_id}`에 관리자 토큰을 보내 `queued`, `running`, `succeeded`, `failed` 상태와 결과를 조회합니다.
+
+현재 job 상태 저장소는 AI 엔진 프로세스 메모리 기반이며 재시작 시 이력이 사라집니다. 다중 인스턴스 운영 전에는 `job_manager.py`를 Redis 또는 PostgreSQL 기반 저장소로 교체해야 합니다.
+
 Python 직접 의존성을 바꿀 때는 `requirements.in`/`requirements-dev.in`을 수정하고 CI와 같은 Python 버전으로 해시 잠금을 다시 생성합니다.
 
 ```bash
