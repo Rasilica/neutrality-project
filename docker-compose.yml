@@ -36,6 +36,7 @@ services:
       AI_ENGINE_ADMIN_TOKEN: ${AI_ENGINE_ADMIN_TOKEN:?AI_ENGINE_ADMIN_TOKEN must be set}
       AI_ENGINE_ADMIN_CIDRS: 127.0.0.1/32,172.16.0.0/12,10.0.0.0/8
       CRAWLER_ALLOWED_HOSTS: ${CRAWLER_ALLOWED_HOSTS:-}
+      ANALYSIS_SOURCE_HOSTS: ${ANALYSIS_SOURCE_HOSTS:-}
     depends_on:
       db:
         condition: service_healthy
@@ -62,6 +63,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CRAWLER_ALLOWED_HOSTS: ${CRAWLER_ALLOWED_HOSTS:-}
+      ANALYSIS_SOURCE_HOSTS: ${ANALYSIS_SOURCE_HOSTS:-}
     depends_on:
       db:
         condition: service_healthy

@@ -10,12 +10,12 @@ from sqlalchemy.orm import Session
 
 from analysis_schemas import CommentAnalysisPayload
 from models import AnalysisResult, Article, Comment, CommentAnalysis
+from source_scope import source_url_filter
 
 logger = logging.getLogger(__name__)
 
 # 댓글 감정 분석 시 AI에 한 번에 넘길 최대 댓글 수 (프롬프트 길이 제한 고려)
 MAX_COMMENTS_PER_REQUEST = 80
-SBS_NEWS_URL_PATTERN = "%news.sbs.co.kr%"
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
 
 
@@ -42,9 +42,7 @@ class CommentAnalyzer:
             self.db.query(Article)
             .join(Comment, Article.id == Comment.article_id)
             .join(AnalysisResult, Article.id == AnalysisResult.article_id)
-            .filter(
-                Article.url.like(SBS_NEWS_URL_PATTERN), Article.id.not_in(analyzed_ids)
-            )
+            .filter(source_url_filter(Article.url), Article.id.not_in(analyzed_ids))
             .distinct()
             .limit(5)
         )

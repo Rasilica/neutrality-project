@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    JSON,
     BigInteger,
     CheckConstraint,
     Column,
@@ -15,6 +16,8 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from database import Base
+
+JOB_RESULT_TYPE = JSON().with_variant(JSONB(), "postgresql")
 
 
 class NewsSource(Base):
@@ -161,3 +164,16 @@ class CommentAnalysis(Base):
     analyzed_at = Column(DateTime(timezone=True), server_default=func.now())
 
     article = relationship("Article")
+
+
+class AnalysisJob(Base):
+    __tablename__ = "analysis_jobs"
+
+    id = Column(String(32), primary_key=True)
+    operation = Column(String(50), nullable=False)
+    status = Column(String(20), nullable=False, index=True)
+    submitted_at = Column(DateTime(timezone=True), nullable=False)
+    started_at = Column(DateTime(timezone=True))
+    finished_at = Column(DateTime(timezone=True))
+    result = Column(JOB_RESULT_TYPE)
+    error = Column(Text)

@@ -43,10 +43,14 @@ class FakeDb:
 
 
 def filter_contains_like_value(filters, expected):
-    return any(
-        getattr(getattr(expression, "right", None), "value", None) == expected
-        for expression in filters
-    )
+    for expression in filters:
+        clauses = getattr(expression, "clauses", (expression,))
+        if any(
+            getattr(getattr(clause, "right", None), "value", None) == expected
+            for clause in clauses
+        ):
+            return True
+    return False
 
 
 def first_join_targets(query):
@@ -61,7 +65,7 @@ def test_gemini_article_analysis_scope_requires_sbs_article_with_comments():
     query = analyzer._query_eligible_articles()
 
     assert Comment in first_join_targets(query)
-    assert filter_contains_like_value(query.filters, "%news.sbs.co.kr%")
+    assert filter_contains_like_value(query.filters, "https://news.sbs.co.kr/%")
     assert query.outerjoins[0][0] is AnalysisResult
     assert len(query.outerjoins[0]) == 2
     assert "model_used" in str(query.outerjoins[0][1])
@@ -78,7 +82,7 @@ def test_gpt_article_analysis_scope_requires_sbs_article_with_comments():
     query = analyzer._query_eligible_articles()
 
     assert Comment in first_join_targets(query)
-    assert filter_contains_like_value(query.filters, "%news.sbs.co.kr%")
+    assert filter_contains_like_value(query.filters, "https://news.sbs.co.kr/%")
     assert query.outerjoins[0][0] is AnalysisResult
     assert len(query.outerjoins[0]) == 2
     assert "model_used" in str(query.outerjoins[0][1])
@@ -96,6 +100,6 @@ def test_comment_analysis_scope_requires_sbs_article_comments_and_article_analys
     join_targets = first_join_targets(query)
     assert Comment in join_targets
     assert AnalysisResult in join_targets
-    assert filter_contains_like_value(query.filters, "%news.sbs.co.kr%")
+    assert filter_contains_like_value(query.filters, "https://news.sbs.co.kr/%")
     assert query.distinct_called is True
     assert query.limit_value == 5

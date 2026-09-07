@@ -20,7 +20,7 @@ from models import Comment, CommentAnalysis
 
 configure_logging()
 logger = logging.getLogger(__name__)
-job_manager = JobManager()
+job_manager = JobManager(session_factory=SessionLocal)
 
 app = FastAPI(
     title="AI Analytics Engine (진로탐색)",

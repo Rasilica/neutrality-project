@@ -1,6 +1,10 @@
 import time
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 from job_manager import JobManager
+from models import AnalysisJob
 
 
 def wait_for_terminal(manager, job_id):
@@ -51,3 +55,36 @@ def test_job_manager_returns_none_for_unknown_job():
         assert manager.get("missing") is None
     finally:
         manager.shutdown()
+
+
+def test_persistent_job_manager_survives_manager_recreation(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'jobs.db'}")
+    AnalysisJob.__table__.create(engine)
+    session_factory = sessionmaker(bind=engine)
+
+    manager = JobManager(max_workers=1, session_factory=session_factory)
+    try:
+        job_id = manager.submit("persistent-demo", lambda: {"ok": True})
+        status = wait_for_terminal(manager, job_id)
+    finally:
+        manager.shutdown()
+
+    restored = JobManager(max_workers=1, session_factory=session_factory)
+    try:
+        assert restored.get(job_id) == status
+        assert restored.get(job_id)["operation"] == "persistent-demo"
+    finally:
+        restored.shutdown()
+
+
+def test_analysis_job_schema_has_required_persistence_fields():
+    assert {
+        "id",
+        "operation",
+        "status",
+        "submitted_at",
+        "started_at",
+        "finished_at",
+        "result",
+        "error",
+    } <= set(AnalysisJob.__table__.columns.keys())

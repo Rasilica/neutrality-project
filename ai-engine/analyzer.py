@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 
 from analysis_schemas import ArticleAnalysisPayload
 from models import AnalysisResult, Article, Comment
+from source_scope import source_url_filter
 
 logger = logging.getLogger(__name__)
 
-SBS_NEWS_URL_PATTERN = "%news.sbs.co.kr%"
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
 
 
@@ -38,7 +38,7 @@ class GeminiAnalyzer:
                 (Article.id == AnalysisResult.article_id)
                 & (AnalysisResult.model_used == self.model_name),
             )
-            .filter(Article.url.like(SBS_NEWS_URL_PATTERN), AnalysisResult.id.is_(None))
+            .filter(source_url_filter(Article.url), AnalysisResult.id.is_(None))
             .distinct()
             .limit(10)
         )

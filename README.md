@@ -66,6 +66,8 @@ docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
   < db/migrate_serial_ids_to_bigint.sql
 docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
   < db/harden_analysis_constraints.sql
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  < db/job_store.sql
 ```
 
 ### 3. 대시보드 실행
@@ -104,6 +106,13 @@ npm --prefix frontend test
 
 현재 job 상태 저장소는 AI 엔진 프로세스 메모리 기반이며 재시작 시 이력이 사라집니다. 다중 인스턴스 운영 전에는 `job_manager.py`를 Redis 또는 PostgreSQL 기반 저장소로 교체해야 합니다.
 
+분석 품질 평가셋의 시작점은 `ai-engine/evaluation/starter_eval.jsonl`입니다. 사람 검토 라벨로 `gold` 값을 교체한 뒤 모델 예측 JSONL을 만들어 다음처럼 평균 절대 오차(MAE)를 계산할 수 있습니다.
+
+```bash
+cd ai-engine
+.venv/bin/python -m evaluation.evaluate_quality evaluation/starter_eval.jsonl predictions.jsonl
+```
+
 Python 직접 의존성을 바꿀 때는 `requirements.in`/`requirements-dev.in`을 수정하고 CI와 같은 Python 버전으로 해시 잠금을 다시 생성합니다.
 
 ```bash
@@ -123,6 +132,8 @@ uv pip compile --python-version 3.12 --universal --generate-hashes requirements-
 - 모든 HTTP 리다이렉트는 자동 추적하지 않고 목적지의 호스트와 IP를 다시 검증해 SSRF를 차단합니다.
 
 새 뉴스 출처를 추가할 때는 해당 RSS 및 기사 호스트를 `CRAWLER_ALLOWED_HOSTS`에 쉼표로 구분해 추가하세요. 하위 도메인은 명시한 상위 호스트의 범위에 포함되지만, 사설·루프백·링크 로컬 주소로 해석되는 호스트는 항상 거부됩니다.
+
+분석 대상 호스트는 `ANALYSIS_SOURCE_HOSTS`에서 별도로 지정합니다. 기본값은 `news.sbs.co.kr`이며, 여러 호스트를 쉼표로 구분하면 AI 기사·댓글 분석 범위가 확장됩니다. 값은 `https://호스트/` URL 경계로 필터링됩니다. Spring API와 대시보드는 현재 SBS 중심 조회 정책을 유지하므로, 다중 출처 공개 조회를 지원할 때는 `ArticleService` 필터도 함께 확장해야 합니다.
 
 ## 디렉토리 구조
 
