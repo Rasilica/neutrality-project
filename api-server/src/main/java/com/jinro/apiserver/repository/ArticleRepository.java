@@ -5,12 +5,14 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
-public interface ArticleRepository extends JpaRepository<Article, Long> {
+public interface ArticleRepository extends JpaRepository<Article, Long>, JpaSpecificationExecutor<Article> {
 
     @Override
     @EntityGraph(attributePaths = {"source"})
@@ -31,6 +33,10 @@ public interface ArticleRepository extends JpaRepository<Article, Long> {
             @Param("sourceDomainPattern") String sourceDomainPattern,
             Pageable pageable
     );
+
+    @Override
+    @EntityGraph(attributePaths = {"source"})
+    Page<Article> findAll(Specification<Article> specification, Pageable pageable);
 
     @EntityGraph(attributePaths = {"source", "analysisResults"})
     Optional<Article> findWithAnalysisResultsById(Long id);

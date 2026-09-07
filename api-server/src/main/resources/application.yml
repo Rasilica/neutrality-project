@@ -22,6 +22,8 @@ server:
   port: 8080
 
 app:
+  article-source:
+    hosts: ${ANALYSIS_SOURCE_HOSTS:news.sbs.co.kr}
   security:
     allowed-origins:
       - http://localhost:3000

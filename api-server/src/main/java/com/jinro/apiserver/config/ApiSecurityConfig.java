@@ -1,6 +1,7 @@
 package com.jinro.apiserver.config;
 
 import com.jinro.apiserver.security.ApiSecurityProperties;
+import com.jinro.apiserver.security.ArticleSourceProperties;
 import com.jinro.apiserver.security.RateLimitProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -12,7 +13,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @RequiredArgsConstructor
 @EnableConfigurationProperties({
         ApiSecurityProperties.class,
-        RateLimitProperties.class
+        RateLimitProperties.class,
+        ArticleSourceProperties.class
 })
 public class ApiSecurityConfig implements WebMvcConfigurer {
 

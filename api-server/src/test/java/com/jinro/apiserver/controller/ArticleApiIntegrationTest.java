@@ -22,6 +22,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {
         "app.rate-limit.enabled=false",
+        "app.article-source.hosts[0]=news.sbs.co.kr",
+        "app.article-source.hosts[1]=news.jtbc.co.kr",
         "logging.level.com.jinro.apiserver.logging=ERROR"
 })
 class ArticleApiIntegrationTest {
@@ -54,7 +56,9 @@ class ArticleApiIntegrationTest {
                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
                     (202, 100, 'SBS 댓글 분석만 성공한 기사', '본문 내용', 'https://news.sbs.co.kr/news/endPage.do?news_id=N1000000202',
                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                    (203, 101, 'JTBC 분석 성공했지만 제외할 기사', '본문 내용', 'https://news.jtbc.co.kr/article/article.aspx?news_id=NB12220953',
+                    (203, 101, 'JTBC 분석 성공한 기사', '본문 내용', 'https://news.jtbc.co.kr/article/article.aspx?news_id=NB12220953',
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                    (204, 101, 'lookalike 도메인은 제외할 기사', '본문 내용', 'https://news.jtbc.co.kr.attacker.test/article/evil',
                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """);
         jdbcTemplate.update("""
@@ -64,7 +68,8 @@ class ArticleApiIntegrationTest {
                 VALUES
                     (300, 200, 'gemini-cross-check', 0.12, 0.24, 0.88, '통합 테스트용 분석 요약', CURRENT_TIMESTAMP),
                     (301, 201, 'gemini-cross-check', 0.10, 0.20, 0.80, '기사 분석만 있는 요약', CURRENT_TIMESTAMP),
-                    (303, 203, 'gemini-cross-check', 0.10, 0.20, 0.80, 'JTBC 요약', CURRENT_TIMESTAMP)
+                    (303, 203, 'gemini-cross-check', 0.10, 0.20, 0.80, 'JTBC 요약', CURRENT_TIMESTAMP),
+                    (304, 204, 'gemini-cross-check', 0.10, 0.20, 0.80, 'lookalike 요약', CURRENT_TIMESTAMP)
                 """);
         jdbcTemplate.update("""
                 INSERT INTO comment_analysis (
@@ -86,16 +91,18 @@ class ArticleApiIntegrationTest {
                         .param("sort", "id,asc"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"))
-                .andExpect(jsonPath("$.content", hasSize(2)))
+                .andExpect(jsonPath("$.content", hasSize(3)))
                 .andExpect(jsonPath("$.content[0].id").value(200))
                 .andExpect(jsonPath("$.content[0].title").value("SBS 기사 분석과 댓글 분석 모두 성공한 기사"))
                 .andExpect(jsonPath("$.content[1].id").value(201))
                 .andExpect(jsonPath("$.content[1].title").value("SBS 기사 분석만 성공한 기사"))
+                .andExpect(jsonPath("$.content[2].id").value(203))
+                .andExpect(jsonPath("$.content[2].title").value("JTBC 분석 성공한 기사"))
                 .andExpect(jsonPath("$.content[0].sourceName").value("SBS 뉴스 통합테스트"))
                 .andExpect(jsonPath("$.content[0].analysisResults", empty()))
                 .andExpect(jsonPath("$.page.number").value(0))
                 .andExpect(jsonPath("$.page.size").value(5))
-                .andExpect(jsonPath("$.page.totalElements").value(2));
+                .andExpect(jsonPath("$.page.totalElements").value(3));
     }
 
     @Test

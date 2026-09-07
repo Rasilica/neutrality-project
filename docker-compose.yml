@@ -82,6 +82,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:?POSTGRES_DB must be set}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:?POSTGRES_USER must be set}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      ANALYSIS_SOURCE_HOSTS: ${ANALYSIS_SOURCE_HOSTS:-news.sbs.co.kr}
     depends_on:
       db:
         condition: service_healthy

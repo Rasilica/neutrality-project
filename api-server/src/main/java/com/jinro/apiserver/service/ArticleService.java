@@ -6,6 +6,8 @@ import com.jinro.apiserver.dto.ArticleResponseDto;
 import com.jinro.apiserver.exception.ResourceNotFoundException;
 import com.jinro.apiserver.repository.AnalysisResultRepository;
 import com.jinro.apiserver.repository.ArticleRepository;
+import com.jinro.apiserver.repository.ArticleSpecifications;
+import com.jinro.apiserver.security.ArticleSourceProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -20,13 +22,15 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class ArticleService {
 
-    private static final String SBS_NEWS_DOMAIN_PATTERN = "%news.sbs.co.kr%";
-
     private final ArticleRepository articleRepository;
     private final AnalysisResultRepository analysisResultRepository;
+    private final ArticleSourceProperties articleSourceProperties;
 
     public Page<ArticleResponseDto> getArticles(Pageable pageable) {
-        return articleRepository.findSbsArticlesWithArticleAnalysis(SBS_NEWS_DOMAIN_PATTERN, pageable)
+        return articleRepository.findAll(
+                        ArticleSpecifications.withAnalysisFromHosts(articleSourceProperties.getHosts()),
+                        pageable
+                )
                 .map(article -> new ArticleResponseDto(article, false));
     }
 
