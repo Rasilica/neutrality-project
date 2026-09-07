@@ -1,6 +1,7 @@
-const DEFAULT_API_BASE = "http://localhost:8081";
-const DEFAULT_AI_BASE = "http://localhost:8000";
 const hasBrowserDom = typeof document !== "undefined";
+const localHost = typeof window !== "undefined" ? window.location.hostname : "localhost";
+const DEFAULT_API_BASE = `http://${localHost}:8081`;
+const DEFAULT_AI_BASE = `http://${localHost}:8000`;
 
 const state = {
   apiBase: typeof localStorage !== "undefined" ? localStorage.getItem("jinroApiBase") || DEFAULT_API_BASE : DEFAULT_API_BASE,
