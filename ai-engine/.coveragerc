@@ -1,0 +1,13 @@
+[run]
+source = .
+omit =
+    test_*.py
+    conftest.py
+    compare_ollama_models.py
+    dataset_augmenter.py
+    train_lora.py
+
+[report]
+show_missing = true
+skip_covered = false
+fail_under = 80

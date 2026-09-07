@@ -90,10 +90,8 @@ uv venv --python 3.12 .venv
 uv pip sync --python .venv/bin/python --require-hashes requirements-dev.txt
 .venv/bin/pytest
 
-# 이번 분석 경로의 80% 커버리지 게이트
-.venv/bin/pytest test_analysis_schemas.py test_analyzer_responses.py \
-  --cov=analysis_schemas --cov=analyzer --cov=gpt_analyzer --cov=comment_analyzer \
-  --cov-fail-under=80
+# 운영 서비스 코드의 80% 커버리지 게이트
+.venv/bin/pytest --cov=. --cov-config=.coveragerc --cov-fail-under=80
 
 # Java (api-server) — 통합/보안/부하 테스트 포함
 cd api-server && ./gradlew test
@@ -117,6 +115,10 @@ uv pip compile --python-version 3.12 --universal --generate-hashes requirements-
 - AI 엔진의 관리용 엔드포인트는 **허용 IP 대역(CIDR) + 관리자 토큰** 이중 검증을 거칩니다.
 - Spring Boot API는 보안 헤더, 레이트 리밋, HTTP 메서드 보호 필터를 적용했습니다.
 - 대시보드의 외부 기사 링크는 HTTP/HTTPS 프로토콜만 허용합니다.
+- RSS·기사·댓글 크롤러는 `CRAWLER_ALLOWED_HOSTS`의 호스트만 접근하고, DNS 결과가 공인 IP인지 확인합니다.
+- 모든 HTTP 리다이렉트는 자동 추적하지 않고 목적지의 호스트와 IP를 다시 검증해 SSRF를 차단합니다.
+
+새 뉴스 출처를 추가할 때는 해당 RSS 및 기사 호스트를 `CRAWLER_ALLOWED_HOSTS`에 쉼표로 구분해 추가하세요. 하위 도메인은 명시한 상위 호스트의 범위에 포함되지만, 사설·루프백·링크 로컬 주소로 해석되는 호스트는 항상 거부됩니다.
 
 ## 디렉토리 구조
 

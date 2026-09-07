@@ -1,13 +1,14 @@
-import re
+import html
 import json
 import logging
-import html
 import os
-import requests
-from urllib.parse import parse_qs, urlparse
+import re
+from urllib.parse import parse_qs, urlsplit
+
 from sqlalchemy.orm import Session
 
 from models import Article, Comment
+from network_security import safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -15,16 +16,24 @@ logger = logging.getLogger(__name__)
 class CommentCrawler:
     """뉴스 기사 댓글을 공개 API를 통해 수집하는 크롤러."""
 
-    # 네이버 뉴스 URL에서 oid(언론사 코드)와 aid(기사 ID)를 추출하는 패턴
-    NAVER_URL_PATTERN = re.compile(r'n(?:ews)?\.naver\.com/(?:mnews/)?article/(\d+)/(\d+)')
-    NAVER_COMMENT_API_URL = "https://apis.naver.com/commentBox/cbox/web_naver_list_jsonp.json"
-    SBS_COMMENT_API_URL = "https://api-gw.sbsdlab.co.kr/v1/news_front_api/comment/{article_id}"
+    NAVER_ARTICLE_PATH = re.compile(r"^/(?:mnews/)?article/(\d{3})/(\d{6,20})/?$")
+    SBS_ARTICLE_ID = re.compile(r"^[A-Z]?\d{6,20}$")
+    SBS_ARTICLE_PATH = re.compile(r"^/article/([A-Z]\d{6,20})/?$")
+    NAVER_HOSTS = frozenset({"n.news.naver.com", "news.naver.com"})
+    SBS_HOST = "news.sbs.co.kr"
+    NAVER_COMMENT_API_URL = (
+        "https://apis.naver.com/commentBox/cbox/web_naver_list_jsonp.json"
+    )
+    SBS_COMMENT_API_URL = (
+        "https://api-gw.sbsdlab.co.kr/v1/news_front_api/comment/{article_id}"
+    )
     SBS_PAGE_SIZE = 100
     SBS_MAX_PAGES = 10
     DEFAULT_BATCH_SIZE = int(os.getenv("COMMENT_CRAWL_BATCH_SIZE", "200"))
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, resolver=None):
         self.db = db
+        self.resolver = resolver
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
             "Referer": "https://news.naver.com",
@@ -32,21 +41,42 @@ class CommentCrawler:
 
     def _extract_naver_ids(self, url: str):
         """URL에서 네이버 뉴스 oid, aid를 추출. 비-네이버 URL이면 (None, None) 반환."""
-        match = self.NAVER_URL_PATTERN.search(url)
+        try:
+            parsed = urlsplit(url)
+        except ValueError:
+            return None, None
+        if (
+            parsed.scheme not in {"http", "https"}
+            or parsed.hostname not in self.NAVER_HOSTS
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            return None, None
+        match = self.NAVER_ARTICLE_PATH.fullmatch(parsed.path)
         if match:
             return match.group(1), match.group(2)
         return None, None
 
     def _extract_sbs_target(self, url: str):
         """SBS 뉴스 URL에서 댓글 API 호출에 필요한 기사 정보를 추출."""
-        parsed = urlparse(url)
-        if "news.sbs.co.kr" not in parsed.netloc:
+        try:
+            parsed = urlsplit(url)
+        except ValueError:
+            return None
+        if (
+            parsed.scheme not in {"http", "https"}
+            or parsed.hostname != self.SBS_HOST
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
             return None
 
         params = parse_qs(parsed.query)
         pathname = parsed.path or ""
 
-        if "article_id" in params:
+        if "article_id" in params and self.SBS_ARTICLE_ID.fullmatch(
+            params["article_id"][0]
+        ):
             return {
                 "provider": "sbs",
                 "article_id": params["article_id"][0],
@@ -55,7 +85,7 @@ class CommentCrawler:
             }
 
         news_id = self._first_query_value(params, "news_id", "newsId", "id")
-        if news_id:
+        if news_id and self.SBS_ARTICLE_ID.fullmatch(news_id):
             return {
                 "provider": "sbs",
                 "article_id": news_id,
@@ -63,7 +93,7 @@ class CommentCrawler:
                 "news_type": "N",
             }
 
-        article_match = re.match(r"^/article/([A-Z]\d+)", pathname)
+        article_match = self.SBS_ARTICLE_PATH.fullmatch(pathname)
         if article_match:
             article_id = article_match.group(1)
             is_news = article_id.startswith("N")
@@ -161,8 +191,13 @@ class CommentCrawler:
             "page": 1,
         }
         try:
-            resp = requests.get(
-                self.NAVER_COMMENT_API_URL, params=params, headers=self.headers, timeout=10
+            resp = safe_get(
+                self.NAVER_COMMENT_API_URL,
+                allowed_hosts={"apis.naver.com"},
+                resolver=self.resolver,
+                params=params,
+                headers=self.headers,
+                timeout=10,
             )
             resp.raise_for_status()
 
@@ -172,12 +207,14 @@ class CommentCrawler:
                 data = json.loads(text)
             else:
                 # _callback(...) 형태에서 JSON 본문만 추출
-                json_str = re.sub(r'^[^(]+\(', '', text).rstrip(');')
+                json_str = re.sub(r"^[^(]+\(", "", text).rstrip(");")
                 data = json.loads(json_str)
 
             return data.get("result", {}).get("commentList", [])
         except Exception:
-            logger.error("Naver comment API 호출 실패. oid=%s aid=%s", oid, aid, exc_info=True)
+            logger.error(
+                "Naver comment API 호출 실패. oid=%s aid=%s", oid, aid, exc_info=True
+            )
             return []
 
     def _fetch_sbs_comments(self, target: dict) -> list:
@@ -201,11 +238,23 @@ class CommentCrawler:
                 "limit": self.SBS_PAGE_SIZE,
             }
             try:
-                resp = requests.get(api_url, params=params, headers=headers, timeout=10)
+                resp = safe_get(
+                    api_url,
+                    allowed_hosts={"api-gw.sbsdlab.co.kr"},
+                    resolver=self.resolver,
+                    params=params,
+                    headers=headers,
+                    timeout=10,
+                )
                 resp.raise_for_status()
                 page_comments = resp.json()
             except Exception:
-                logger.error("SBS comment API 호출 실패. article_id=%s page=%s", article_id, page, exc_info=True)
+                logger.error(
+                    "SBS comment API 호출 실패. article_id=%s page=%s",
+                    article_id,
+                    page,
+                    exc_info=True,
+                )
                 return comments
 
             if not isinstance(page_comments, list) or not page_comments:
@@ -215,7 +264,9 @@ class CommentCrawler:
             total_count = self._safe_int(page_comments[0].get("TOTAL_COMMENT_COUNT"))
             top_count = self._safe_int(page_comments[0].get("TOP_COMMENT_COUNT"))
             expected_count = max(total_count, top_count)
-            if len(page_comments) < self.SBS_PAGE_SIZE or (expected_count and len(comments) >= expected_count):
+            if len(page_comments) < self.SBS_PAGE_SIZE or (
+                expected_count and len(comments) >= expected_count
+            ):
                 break
 
         return comments
@@ -240,7 +291,7 @@ class CommentCrawler:
             articles = (
                 self.db.query(Article)
                 .outerjoin(Comment, Article.id == Comment.article_id)
-                .filter(Comment.id == None)
+                .filter(Comment.id.is_(None))
                 .limit(self.DEFAULT_BATCH_SIZE)
                 .all()
             )
@@ -269,14 +320,19 @@ class CommentCrawler:
                     raw_comments = self._fetch_comments(target["oid"], target["aid"])
                     normalized_comments = [
                         comment
-                        for comment in (self._normalize_naver_comment(raw) for raw in raw_comments)
+                        for comment in (
+                            self._normalize_naver_comment(raw) for raw in raw_comments
+                        )
                         if comment
                     ]
                 elif provider == "sbs":
                     raw_comments = self._fetch_sbs_comments(target)
                     normalized_comments = [
                         comment
-                        for comment in (self._normalize_sbs_comment(raw) for raw in self._flatten_sbs_comments(raw_comments))
+                        for comment in (
+                            self._normalize_sbs_comment(raw)
+                            for raw in self._flatten_sbs_comments(raw_comments)
+                        )
                         if comment
                     ]
                 else:
@@ -308,7 +364,9 @@ class CommentCrawler:
 
                 self.db.commit()
             except Exception:
-                logger.error("기사 댓글 수집 중 오류. article_id=%s", article.id, exc_info=True)
+                logger.error(
+                    "기사 댓글 수집 중 오류. article_id=%s", article.id, exc_info=True
+                )
                 self.db.rollback()
                 errors += 1
 

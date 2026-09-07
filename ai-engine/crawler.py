@@ -1,18 +1,28 @@
-import feedparser
 import json
-import requests
-from bs4 import BeautifulSoup
+import logging
+import os
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from sqlalchemy.orm import Session
-import logging
 
-from models import NewsSource, Article
+import feedparser
+from bs4 import BeautifulSoup
+from sqlalchemy.orm import Session
+
+from models import Article, NewsSource
+from network_security import safe_get
 
 logger = logging.getLogger(__name__)
 
+
 class RSSCrawler:
     MIN_USEFUL_CONTENT_LENGTH = 100
+    DEFAULT_ALLOWED_HOSTS = (
+        "news.sbs.co.kr",
+        "rss.naver.com",
+        "n.news.naver.com",
+        "news.naver.com",
+        "news.jtbc.co.kr",
+    )
 
     REQUEST_HEADERS = {
         "User-Agent": (
@@ -22,8 +32,19 @@ class RSSCrawler:
         "Accept": "application/rss+xml, application/xml, text/xml, text/html;q=0.8, */*;q=0.5",
     }
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, resolver=None):
         self.db = db
+        configured_hosts = os.getenv("CRAWLER_ALLOWED_HOSTS")
+        self.allowed_hosts = (
+            tuple(
+                host.strip().lower()
+                for host in configured_hosts.split(",")
+                if host.strip()
+            )
+            if configured_hosts
+            else self.DEFAULT_ALLOWED_HOSTS
+        )
+        self.resolver = resolver
 
     @staticmethod
     def _normalize_text(value: str) -> str:
@@ -79,13 +100,18 @@ class RSSCrawler:
             return cls._normalize_text(description["content"])[:5000]
 
         paragraphs = [
-            cls._normalize_text(p.get_text(" ", strip=True))
-            for p in soup.find_all("p")
+            cls._normalize_text(p.get_text(" ", strip=True)) for p in soup.find_all("p")
         ]
         return cls._normalize_text(" ".join(p for p in paragraphs if p))[:5000]
 
     def fetch_feed(self, source: NewsSource):
-        response = requests.get(source.rss_url, headers=self.REQUEST_HEADERS, timeout=10)
+        response = safe_get(
+            source.rss_url,
+            allowed_hosts=self.allowed_hosts,
+            resolver=self.resolver,
+            headers=self.REQUEST_HEADERS,
+            timeout=10,
+        )
         response.raise_for_status()
         feed = feedparser.parse(response.content)
         try:
@@ -120,7 +146,9 @@ class RSSCrawler:
 
         for date_format in ("%Y.%m.%d", "%Y-%m-%d", "%Y.%m.%d %H:%M", "%Y-%m-%d %H:%M"):
             try:
-                return datetime.strptime(published_raw, date_format).replace(tzinfo=timezone.utc)
+                return datetime.strptime(published_raw, date_format).replace(
+                    tzinfo=timezone.utc
+                )
             except ValueError:
                 continue
 
@@ -129,7 +157,13 @@ class RSSCrawler:
     def scrape_article_content(self, url: str) -> str:
         """기사 원문 페이지에서 간단하게 본문을 추출합니다."""
         try:
-            response = requests.get(url, headers=self.REQUEST_HEADERS, timeout=10)
+            response = safe_get(
+                url,
+                allowed_hosts=self.allowed_hosts,
+                resolver=self.resolver,
+                headers=self.REQUEST_HEADERS,
+                timeout=10,
+            )
             response.raise_for_status()
             return self.extract_article_content(response.text)
         except Exception:
@@ -174,17 +208,22 @@ class RSSCrawler:
                     )
 
                 if not entries:
-                    error_message = str(bozo_exception or "RSS feed returned no entries.")
+                    error_message = str(
+                        bozo_exception or "RSS feed returned no entries."
+                    )
                     raise ValueError(error_message)
 
                 for entry in entries:
-                    link = entry.get('link')
+                    link = entry.get("link")
                     if not link:
                         source_result["errors"] += 1
                         results["errors"] += 1
-                        logger.warning("RSS entry skipped because link is missing. source=%s", source.name)
+                        logger.warning(
+                            "RSS entry skipped because link is missing. source=%s",
+                            source.name,
+                        )
                         continue
-                    
+
                     # 날짜 파싱
                     published_at = None
                     try:
@@ -202,29 +241,42 @@ class RSSCrawler:
                     fallback_content = self.extract_entry_summary(entry)
 
                     # 중복 기사 필터링 (URL 기준). 기존 데이터가 비어 있으면 보정합니다.
-                    existing_article = self.db.query(Article).filter(Article.url == link).first()
+                    existing_article = (
+                        self.db.query(Article).filter(Article.url == link).first()
+                    )
                     if existing_article:
                         source_result["duplicates"] += 1
                         updated_existing = False
                         if published_at and not existing_article.published_at:
                             existing_article.published_at = published_at
                             updated_existing = True
-                        if len(existing_article.content or "") < self.MIN_USEFUL_CONTENT_LENGTH:
+                        if (
+                            len(existing_article.content or "")
+                            < self.MIN_USEFUL_CONTENT_LENGTH
+                        ):
                             content = self.scrape_article_content(link)
-                            if len(content) < self.MIN_USEFUL_CONTENT_LENGTH and fallback_content:
+                            if (
+                                len(content) < self.MIN_USEFUL_CONTENT_LENGTH
+                                and fallback_content
+                            ):
                                 content = fallback_content
                             if content and content != existing_article.content:
                                 existing_article.content = content
                                 updated_existing = True
                         if updated_existing:
-                            source_result["updated_articles"] = source_result.get("updated_articles", 0) + 1
+                            source_result["updated_articles"] = (
+                                source_result.get("updated_articles", 0) + 1
+                            )
                         continue
-                    
-                    title = entry.get('title', 'No Title')
-                    
+
+                    title = entry.get("title", "No Title")
+
                     # (선택) 기사 본문 스크래핑
                     content = self.scrape_article_content(link)
-                    if len(content) < self.MIN_USEFUL_CONTENT_LENGTH and fallback_content:
+                    if (
+                        len(content) < self.MIN_USEFUL_CONTENT_LENGTH
+                        and fallback_content
+                    ):
                         content = fallback_content
 
                     # DB 저장
@@ -233,21 +285,27 @@ class RSSCrawler:
                         title=title,
                         content=content,
                         url=link,
-                        published_at=published_at
+                        published_at=published_at,
                     )
                     self.db.add(article)
                     results["new_articles"] += 1
                     source_result["new_articles"] += 1
-                
+
                 self.db.commit()
             except Exception as exc:
                 source_result["status"] = "feed_error"
                 source_result["errors"] += 1
-                source_result["error"] = str(exc)[:300] or "RSS 처리 중 오류가 발생했습니다."
+                source_result["error"] = (
+                    str(exc)[:300] or "RSS 처리 중 오류가 발생했습니다."
+                )
                 results["errors"] += 1
-                logger.error("Error processing RSS for source. source=%s", source.name, exc_info=True)
+                logger.error(
+                    "Error processing RSS for source. source=%s",
+                    source.name,
+                    exc_info=True,
+                )
                 self.db.rollback()
             finally:
                 results["source_results"].append(source_result)
-                
+
         return results
