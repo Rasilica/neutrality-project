@@ -1,6 +1,6 @@
 # 1. 뼈대가 될 로컬 GGUF 파일 경로 지정
 # 코랩에서 다운로드 받은 .gguf 파일의 이름을 아래에 맞게 수정하시거나, 해당 파일을 이 폴더로 옮기고 이름을 'unsloth.Q4_K_M.gguf'로 변경하세요.
-FROM ../Qwen2.5-7B-Instruct.Q4_K_M.gguf
+FROM gemma4:e4b
 
 # 2. 모델 온도 및 파라미터 튜닝
 # 뉴스를 '객관적으로' 분석해야 하므로 창의성(Temperature)을 대폭 낮춰 환각(Hallucination)을 억제합니다.

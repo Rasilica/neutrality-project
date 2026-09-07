@@ -52,7 +52,10 @@ cp .env.example .env
 ### 2. 전체 스택 실행
 
 ```bash
-docker compose up -d db ai-engine ai-worker api-server
+docker compose up -d db ollama ai-engine ai-worker api-server
+
+# Ollama 모델 다운로드 (최초 1회)
+docker compose exec ollama ollama pull gemma4:e4b
 
 # RSS 소스 등록 (최초 1회)
 docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \

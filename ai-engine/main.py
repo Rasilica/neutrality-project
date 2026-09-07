@@ -17,6 +17,7 @@ from gpt_analyzer import GPTAnalyzer
 from job_manager import JobManager
 from logging_config import configure_logging
 from models import Comment, CommentAnalysis
+from ollama_analyzer import OllamaAnalyzer
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -119,11 +120,13 @@ async def cluster_articles():
 
 @app.post("/api/analyze", status_code=202, dependencies=[Depends(verify_admin_access)])
 async def analyze_articles():
-    """Gemini API를 호출하여 기사별 중립성을 평가하고 DB에 저장합니다."""
+    """설정된 로컬/클라우드 모델로 기사별 중립성을 평가합니다."""
+    provider = os.getenv("AI_ANALYSIS_PROVIDER", "gemini").lower()
+    analyzer = OllamaAnalyzer if provider == "ollama" else GeminiAnalyzer
     job_id = submit_operation(
-        "gemini-analysis", lambda: _execute_service(GeminiAnalyzer)
+        f"{provider}-analysis", lambda: _execute_service(analyzer)
     )
-    return _accepted("gemini-analysis", job_id)
+    return _accepted(f"{provider}-analysis", job_id)
 
 
 @app.post(

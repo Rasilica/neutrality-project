@@ -19,7 +19,21 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  # 2. AI 분석 엔진 (Python FastAPI)
+  # 2. 로컬 Ollama 모델 서버
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # 3. AI 분석 엔진 (Python FastAPI)
   ai-engine:
     build:
       context: ./ai-engine
@@ -37,8 +51,14 @@ services:
       AI_ENGINE_ADMIN_CIDRS: 127.0.0.1/32,172.16.0.0/12,10.0.0.0/8
       CRAWLER_ALLOWED_HOSTS: ${CRAWLER_ALLOWED_HOSTS:-}
       ANALYSIS_SOURCE_HOSTS: ${ANALYSIS_SOURCE_HOSTS:-}
+      AI_ANALYSIS_PROVIDER: ${AI_ANALYSIS_PROVIDER:-ollama}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:e4b}
+      OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-120}
     depends_on:
       db:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
     volumes:
       - ./ai-engine:/app
@@ -96,3 +116,4 @@ services:
 
 volumes:
   postgres_data:
+  ollama_data:
