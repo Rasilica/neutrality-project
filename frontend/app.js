@@ -440,6 +440,10 @@ async function loadCommentAnalysis(id = state.selectedArticleId) {
     }
     renderCommentAnalysis(result.body);
   } catch (error) {
+    if (error.message === "HTTP 404") {
+      elements.commentPanel.innerHTML = '<p class="summary">이 기사에는 아직 수집된 댓글이나 여론 분석 결과가 없습니다.</p>';
+      return;
+    }
     renderCommentError(error);
   }
 }
