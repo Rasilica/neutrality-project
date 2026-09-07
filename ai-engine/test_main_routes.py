@@ -180,6 +180,7 @@ class CommentDb:
 def test_get_comment_analysis_returns_ready_payload_and_not_found():
     analysis = SimpleNamespace(
         total_comments=3,
+        analyzed_comments=1,
         avg_sentiment=0.2,
         positive_ratio=0.5,
         negative_ratio=0.25,
@@ -193,6 +194,7 @@ def test_get_comment_analysis_returns_ready_payload_and_not_found():
 
     assert ready["data"]["analysis_status"] == "ready"
     assert ready["data"]["positive_ratio"] == 0.5
+    assert ready["data"]["analyzed_comments"] == 1
     with pytest.raises(HTTPException) as not_found:
         asyncio.run(main.get_comment_analysis(6, CommentDb(None, [])))
     assert not_found.value.status_code == 404

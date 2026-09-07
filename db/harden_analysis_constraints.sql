@@ -1,5 +1,14 @@
 BEGIN;
 
+ALTER TABLE comment_analysis
+    ADD COLUMN IF NOT EXISTS analyzed_comments INT NOT NULL DEFAULT 0;
+
+ALTER TABLE comment_analysis
+    DROP CONSTRAINT IF EXISTS ck_comment_counts,
+    ADD CONSTRAINT ck_comment_counts CHECK (
+        total_comments >= 0 AND analyzed_comments >= 0 AND analyzed_comments <= total_comments
+    ) NOT VALID;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_analysis_article_model
     ON analysis_results (article_id, model_used);
 

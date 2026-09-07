@@ -129,6 +129,15 @@ class ArticleApiIntegrationTest {
     }
 
     @Test
+    void detailAndAnalysisHideArticlesOutsideConfiguredSources() throws Exception {
+        mockMvc.perform(get("/api/v1/articles/204"))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/v1/articles/204/analysis"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void missingArticleReturnsDocumentedNotFoundError() throws Exception {
         mockMvc.perform(get("/api/v1/articles/999999"))
                 .andExpect(status().isNotFound())

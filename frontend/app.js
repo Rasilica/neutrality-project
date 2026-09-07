@@ -293,6 +293,7 @@ function renderCommentAnalysis(payload) {
       <p class="summary">${escapeHtml(data.public_opinion || "여론 요약 없음")}</p>
       <div class="opinion-metrics">
         <span>댓글 수 <strong>${data.total_comments ?? 0}</strong></span>
+        <span>분석 표본 <strong>${data.analyzed_comments ?? data.total_comments ?? 0}</strong></span>
         <span class="metric-pill ${sentimentTone}">평균 감정 <strong>${formatScoreAsPoints(data.avg_sentiment, "sentiment")}</strong></span>
         <span>긍정 비율 <strong>${formatRatio(data.positive_ratio)}</strong></span>
         <span>부정 비율 <strong>${formatRatio(data.negative_ratio)}</strong></span>

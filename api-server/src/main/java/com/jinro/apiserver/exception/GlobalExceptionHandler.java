@@ -36,7 +36,7 @@ public class GlobalExceptionHandler {
     ) {
         ErrorResponseDto response = buildResponse(
                 HttpStatus.BAD_REQUEST,
-                exception.getMessage(),
+                "요청 형식이 올바르지 않습니다.",
                 request
         );
 

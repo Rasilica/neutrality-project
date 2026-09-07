@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.net.URI;
 import java.util.stream.Collectors;
 
 @Service
@@ -37,16 +38,33 @@ public class ArticleService {
     public ArticleResponseDto getArticle(Long id) {
         Article article = articleRepository.findWithAnalysisResultsById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("존재하지 않는 기사입니다. id=" + id));
+        ensureAllowedSource(article);
         return new ArticleResponseDto(article);
     }
 
     public List<AnalysisResultDto> getArticleAnalysis(Long id) {
         // 기사 존재 여부 먼저 확인
-        articleRepository.findById(id)
+        Article article = articleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("존재하지 않는 기사입니다. id=" + id));
+        ensureAllowedSource(article);
         
         return analysisResultRepository.findByArticleId(id).stream()
                 .map(AnalysisResultDto::new)
                 .collect(Collectors.toList());
+    }
+
+    private void ensureAllowedSource(Article article) {
+        try {
+            URI uri = URI.create(article.getUrl());
+            boolean allowed = "https".equalsIgnoreCase(uri.getScheme())
+                    && uri.getHost() != null
+                    && articleSourceProperties.getHosts().stream()
+                    .anyMatch(host -> host.equalsIgnoreCase(uri.getHost().replaceFirst("\\.$", "")));
+            if (!allowed) {
+                throw new ResourceNotFoundException("존재하지 않는 기사입니다. id=" + article.getId());
+            }
+        } catch (IllegalArgumentException exception) {
+            throw new ResourceNotFoundException("존재하지 않는 기사입니다. id=" + article.getId());
+        }
     }
 }

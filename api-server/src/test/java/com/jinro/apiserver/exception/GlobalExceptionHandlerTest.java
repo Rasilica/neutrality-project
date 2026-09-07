@@ -24,7 +24,7 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().status()).isEqualTo(400);
         assertThat(response.getBody().error()).isEqualTo("Bad Request");
-        assertThat(response.getBody().message()).isEqualTo("잘못된 요청입니다.");
+        assertThat(response.getBody().message()).isEqualTo("요청 형식이 올바르지 않습니다.");
         assertThat(response.getBody().path()).isEqualTo("/api/v1/articles/not-a-number");
     }
 

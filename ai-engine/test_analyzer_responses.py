@@ -223,6 +223,7 @@ def test_comment_run_persists_validated_ratios():
 
     assert result == {"status": "success", "analyzed_count": 1, "errors": 0}
     assert db.added[0].total_comments == 4
+    assert db.added[0].analyzed_comments == 1
     assert db.added[0].negative_ratio == 0.5
 
 

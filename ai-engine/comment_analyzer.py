@@ -136,6 +136,7 @@ class CommentAnalyzer:
                 analysis = CommentAnalysis(
                     article_id=article.id,
                     total_comments=total_in_db,
+                    analyzed_comments=len(comments),
                     avg_sentiment=payload.avg_sentiment,
                     positive_ratio=payload.positive_ratio,
                     negative_ratio=payload.negative_ratio,

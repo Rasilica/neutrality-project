@@ -122,6 +122,10 @@ class Comment(Base):
     dislikes = Column(Integer, default=0)
     collected_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    __table_args__ = (
+        CheckConstraint("likes >= 0 AND dislikes >= 0", name="ck_comments_reactions_nonnegative"),
+    )
+
     article = relationship("Article")
 
 
@@ -144,6 +148,10 @@ class CommentAnalysis(Base):
             "ABS(positive_ratio + negative_ratio + neutral_ratio - 1.0) <= 0.02",
             name="ck_comment_ratio_sum",
         ),
+        CheckConstraint(
+            "total_comments >= 0 AND analyzed_comments >= 0 AND analyzed_comments <= total_comments",
+            name="ck_comment_counts",
+        ),
     )
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -155,6 +163,7 @@ class CommentAnalysis(Base):
         unique=True,
     )
     total_comments = Column(Integer, default=0)
+    analyzed_comments = Column(Integer, default=0)
     avg_sentiment = Column(Float)
     positive_ratio = Column(Float)
     negative_ratio = Column(Float)

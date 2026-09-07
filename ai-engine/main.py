@@ -233,6 +233,7 @@ async def get_comment_analysis(article_id: int, db: Session = Depends(get_db)):
             "article_id": article_id,
             "analysis_status": "ready",
             "total_comments": analysis.total_comments,
+            "analyzed_comments": getattr(analysis, "analyzed_comments", analysis.total_comments),
             "avg_sentiment": analysis.avg_sentiment,
             "positive_ratio": analysis.positive_ratio,
             "negative_ratio": analysis.negative_ratio,

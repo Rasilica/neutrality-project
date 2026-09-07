@@ -80,7 +80,8 @@ CREATE TABLE IF NOT EXISTS comments (
     author       VARCHAR(100) DEFAULT '익명',     -- 마스킹된 작성자 ID
     likes        INT          DEFAULT 0,          -- 공감 수
     dislikes     INT          DEFAULT 0,          -- 비공감 수
-    collected_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    collected_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT ck_comments_reactions_nonnegative CHECK (likes >= 0 AND dislikes >= 0)
 );
 
 CREATE INDEX IF NOT EXISTS idx_comments_article_id ON comments(article_id);
@@ -89,7 +90,8 @@ CREATE INDEX IF NOT EXISTS idx_comments_article_id ON comments(article_id);
 CREATE TABLE IF NOT EXISTS comment_analysis (
     id              BIGSERIAL PRIMARY KEY,
     article_id      BIGINT       NOT NULL REFERENCES articles(id) ON DELETE CASCADE UNIQUE,
-    total_comments  INT          DEFAULT 0,       -- 분석 대상 댓글 수
+    total_comments  INT          NOT NULL DEFAULT 0, -- 수집된 전체 댓글 수
+    analyzed_comments INT        NOT NULL DEFAULT 0, -- AI 분석에 실제 사용한 댓글 수
     avg_sentiment   FLOAT,                        -- 평균 감정 점수 (-1.0 ~ 1.0)
     positive_ratio  FLOAT,                        -- 긍정 댓글 비율 (0.0 ~ 1.0)
     negative_ratio  FLOAT,                        -- 부정 댓글 비율 (0.0 ~ 1.0)
@@ -103,6 +105,9 @@ CREATE TABLE IF NOT EXISTS comment_analysis (
     CONSTRAINT ck_comment_neutral_ratio CHECK (neutral_ratio BETWEEN 0.0 AND 1.0),
     CONSTRAINT ck_comment_ratio_sum CHECK (
         ABS(positive_ratio + negative_ratio + neutral_ratio - 1.0) <= 0.02
+    ),
+    CONSTRAINT ck_comment_counts CHECK (
+        total_comments >= 0 AND analyzed_comments >= 0 AND analyzed_comments <= total_comments
     )
 );
 
